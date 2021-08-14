@@ -1,7 +1,7 @@
 import pytest
 from aerisweather.aerisweather import AerisWeather
 from aerisweather.requests.RequestLocation import RequestLocation
-from aeris.activities.baseactivity import DiscGolfActivity, BaseActivity
+from aeris.activities.activity import DiscGolfActivity, BaseActivity
 from mock import MagicMock
 from aeris import keys
 
@@ -36,7 +36,7 @@ def test_determine_activity_index_base(aeris_weather, location):
         activity = BaseActivity(aeris_weather, location)
         activity.determine_activity_index()
 
-
+# TODO parameterize on different locations?
 def test_determine_activity_index(aeris_weather, location):
     activity = DiscGolfActivity(aeris_weather, location)
 
