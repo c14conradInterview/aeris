@@ -1,17 +1,10 @@
 import pytest
+from aeris import keys
+from aeris.activities.activity import DiscGolfActivity, BaseActivity
 from aerisweather.aerisweather import AerisWeather
 from aerisweather.requests.RequestLocation import RequestLocation
-from aeris.activities.activity import DiscGolfActivity, BaseActivity
 from aerisweather.responses.ObservationsData import ObservationsData
-from aerisweather.responses.AlertsResponse import AlertsResponse
-from aeris import keys
 from mock import MagicMock
-
-flag = '86001'
-phx = '85086'
-tuc = '85075'
-sb = '93101'
-sd = '92101'
 
 
 @pytest.fixture
@@ -20,20 +13,21 @@ def aeris_weather():
 
 
 @pytest.fixture
-def location():
-    return RequestLocation(postal_code='86001')
+def location(request):
+    if hasattr(request, 'param'):
+        return RequestLocation(postal_code=request.param)
+    else:
+        return RequestLocation(postal_code='86001')
 
 
 @pytest.fixture
-def paramed_list_obs_data(request):
-    # Make the mocked object have the same strucutre used to get data.
-    mock_response = MagicMock()
-    mock_response.ob = ObservationsData(request.param)
-    return [mock_response]
+def paramed_obs_data(request):
+    return ObservationsData(request.param)
 
 
 @pytest.fixture
 def paramed_list_air_quality(request):
+    # Make the same structure as the response will get.
     mock_response = MagicMock()
     mock_response.periods = []
     period = MagicMock()
@@ -41,14 +35,10 @@ def paramed_list_air_quality(request):
     mock_response.periods.append(period)
     return [mock_response]
 
+
 @pytest.fixture
 def disc_actitivty(aeris_weather, location):
     return DiscGolfActivity(aeris_weather, location)
-
-
-@pytest.fixture
-def mock_location():
-    return MagicMock()
 
 
 def test_determine_activity_index_base(aeris_weather, location):
@@ -57,7 +47,13 @@ def test_determine_activity_index_base(aeris_weather, location):
         activity.determine_activity_index()
 
 
-# TODO parameterize on different locations?
+@pytest.mark.parametrize('location',
+                         [('86001'),
+                          ('85086'),
+                          ('85075'),
+                          ('93101'),
+                          ('92101')],
+                         indirect=True)
 def test_determine_activity_index(aeris_weather, location):
     activity = DiscGolfActivity(aeris_weather, location)
 
@@ -65,7 +61,7 @@ def test_determine_activity_index(aeris_weather, location):
     assert index in [1, 2, 3, 4, 5]
 
 
-@pytest.mark.parametrize('paramed_list_obs_data,answer',
+@pytest.mark.parametrize('paramed_obs_data,answer',
                          [({'windMPH': 0,
                           'windSpeedMPH': 0,
                           'windGustMPH': 0}, 5),
@@ -77,14 +73,14 @@ def test_determine_activity_index(aeris_weather, location):
                             'windGustMPH': 30}, 1),
                           ({'windMPH': 11,
                             'windSpeedMPH': 7,
-                            'windGustMPH': 5}, 4),
+                            'windGustMPH': 5}, 3),
                           ],
-                         indirect=["paramed_list_obs_data"])
-def test__check_wind_score(paramed_list_obs_data, answer, disc_actitivty):
-    wind_scores = disc_actitivty._check_wind_score(paramed_list_obs_data)
-    assert wind_scores[0] == answer
+                         indirect=["paramed_obs_data"])
+def test__check_wind_score(paramed_obs_data, answer, disc_actitivty):
+    wind_score = disc_actitivty._check_wind_score(paramed_obs_data)
+    assert wind_score == answer
 
-@pytest.mark.parametrize('paramed_list_obs_data,answer',
+@pytest.mark.parametrize('paramed_obs_data,answer',
                          [({'heatindexF': 70,
                           'windchillF': 70,
                           'feelslikeF': 70}, 5),
@@ -98,29 +94,29 @@ def test__check_wind_score(paramed_list_obs_data, answer, disc_actitivty):
                             'windchillF': 30,
                             'feelslikeF': 30}, 1),
                           ],
-                         indirect=["paramed_list_obs_data"])
-def test__check_temp_score(paramed_list_obs_data, answer, disc_actitivty):
-    scores = disc_actitivty._check_temp_score(paramed_list_obs_data)
-    assert scores[0] == answer
+                         indirect=["paramed_obs_data"])
+def test__check_temp_score(paramed_obs_data, answer, disc_actitivty):
+    score = disc_actitivty._check_temp_score(paramed_obs_data)
+    assert score == answer
 
-@pytest.mark.parametrize('paramed_list_obs_data,answer',
+@pytest.mark.parametrize('paramed_obs_data,answer',
                          [({'precipIN': 0}, 5),
                           ({'precipIN': .4}, 4),
                           ({'precipIN': 1}, 2),
                           ({'precipIN': 2}, 1),
                           ],
-                         indirect=["paramed_list_obs_data"])
-def test__check_precipitation_score(paramed_list_obs_data, answer, disc_actitivty):
-    scores = disc_actitivty._check_precipitation_score(paramed_list_obs_data)
-    assert scores[0] == answer
+                         indirect=["paramed_obs_data"])
+def test__check_precipitation_score(paramed_obs_data, answer, disc_actitivty):
+    score = disc_actitivty._check_precipitation_score(paramed_obs_data)
+    assert score == answer
 
 
 def test__check_alerts_score():
-    assert False
+    pass
 
 
 def test__check_forecasts_score():
-    assert False
+    pass
 
 
 @pytest.mark.parametrize('paramed_list_air_quality,answer',
