@@ -1,10 +1,10 @@
-from aerisweather.responses.ObservationsData import ObservationsData
-from aerisweather.responses.ObservationsResponse import ObservationsResponse
-from aerisweather.aerisweather import AerisWeather
-from aerisweather.requests.RequestLocation import RequestLocation
-from aerisweather.requests.Endpoint import EndpointType, Endpoint
-from aerisweather.requests.ParameterType import ParameterType
 from aeris.enums import AirQualityMinEnum, WindSpeedEnum, TemperatureEnum, ScoreEnum
+from aerisweather.aerisweather import AerisWeather
+from aerisweather.requests.Endpoint import EndpointType, Endpoint
+from aerisweather.requests.RequestLocation import RequestLocation
+from aerisweather.responses.ForecastPeriod import ForecastPeriod
+from aerisweather.responses.ObservationsData import ObservationsData
+
 
 class BaseActivity:
     """
@@ -50,172 +50,155 @@ class DiscGolfActivity(BaseActivity):
         :return: int index value of 1-5 for how nice a day it is to play. 1 being very poor, 5 being best.
         """
         ### Gather the data ###
-        # Only grab one to make methods consistant
-        obs_data = self.aeris_weather.observations(location=self.location)
-        #obs_data = self.aeris_weather.observations(location=self.location)[0].ob
-        alerts = self.aeris_weather.alerts(location=self.location)[0]
-        forecasts = self.aeris_weather.forecasts(location=self.location, params={ParameterType.FORECASTS.TO: '+5hours',
-                                                                                 ParameterType.FORECASTS.FROM: 'today'})
+        # Only grab one to make methods consistent.
+        # Note, the ObservationsData generates a new instance of itself and returns that.
+        # Might be a memory leak if we don't lose reference to them
+        obs_responses = self.aeris_weather.observations(location=self.location)
+
         # aerisweather object doesn't have an explicit method of airquality, so we use the custom endpoint option
         EndpointType.custom = 'airquality'
         air_qualities = self.aeris_weather.request(endpoint=Endpoint(
             endpoint_type=EndpointType.CUSTOM, location=self.location))
-
+        wind_scores = list()
+        temp_scores = list()
+        precipitation_scores = list()
+        forecast_scores = list()
         # For each of the weather types, create a score for how good/bad it is
-        wind_score = self._check_wind_score(obs_data)
-        temp_score = self._check_temp_score(obs_data)
-        precipitation_score = self._check_precipitation_score(obs_data)
+        for obs_data in obs_responses:
+            wind_scores.append(self._check_wind_score(obs_data.ob))
+            temp_scores.append(self._check_temp_score(obs_data.ob))
+            precipitation_scores.append(self._check_precipitation_score(obs_data.ob))
+
+
         # TODO come back to this and handle alert codes, there is probably an enum to handle them
+        #alerts = self.aeris_weather.alerts(location=self.location)[0]
         #alerts_score = self._check_alerts_score(alerts)
         # TODO come back after making the score method generic
-        #forecasts_score = self._check_forecasts_score(forecasts)
-        air_quality_score = self._check_air_quality_score(air_qualities)
+        #forecasts = self.aeris_weather.forecasts(location=self.location, params={ParameterType.FORECASTS.TO: '+5hours',
+        #                                                                         ParameterType.FORECASTS.FROM: 'today'})
+        #for period in forecasts[0].periods:
+        #    forecast_scores.append(self._check_forecasts_score(period))
+
+
+        air_quality_scores = self._check_air_quality_score(air_qualities)
 
         # Using all the individual weather scores, apply rule to determine overall answer
-        index = self._create_index_from_scores(wind_score, temp_score, precipitation_score,
-                                               air_quality_score)
+        # This method could probably be made generalized if each of the scores were objects and
+        index = self._create_index_from_scores(wind_scores, temp_scores, precipitation_scores,
+                                               air_quality_scores)
 
         return index
 
-    # TODO could refactor to a single generic method that takes keys to get, and some scoring algorithm with that data?
-    def _check_wind_score(self, obs: list):
+    # TODO could refactor to a single generic method that takes keys to get, and some scoring algorithm with that data
+    def _check_wind_score(self, obs: ObservationsData):
         """
         Given a list of ObservationsData grab the wind data and compare those to some wind scores
         :param obs: list of ObservationsData holding data from a aerisweather.observations api endpoint
         :return: list of int scores for each observation passed.
         """
-        scores = list()
-        for idx, obs_response in enumerate(obs):
-            ignored_values = 0
-            score = 0
 
-            wind = obs_response.ob.windMPH
-
-            if wind is None:
-                ignored_values += ScoreEnum.BEST
-            elif wind <= WindSpeedEnum.GOOD:
+        ignored_values = 0
+        score = 0
+        wind_types = [obs.windMPH, obs.windSpeedMPH, obs.windGustMPH]
+        # Not sure what the difference between windMPH and windSpeedMPH
+        for wind_type in wind_types:
+            if wind_type is None:
+                ignored_values += 1
+            elif wind_type <= WindSpeedEnum.BEST:
                 score += ScoreEnum.BEST
-            elif wind <= WindSpeedEnum.MODERATE:
+            elif wind_type <= WindSpeedEnum.BEST:
                 score += ScoreEnum.MODERATE
-            elif wind <= WindSpeedEnum.POOR:
+            elif wind_type <= WindSpeedEnum.NEUTRAL:
                 score += ScoreEnum.NEUTRAL
-            elif wind <= WindSpeedEnum.TERRIBLE:
+            elif wind_type <= WindSpeedEnum.POOR:
                 score += ScoreEnum.POOR
+            elif wind_type <= WindSpeedEnum.TERRIBLE:
+                score += ScoreEnum.TERRIBLE
             else:
                 score += ScoreEnum.TERRIBLE
 
-            # Not sure what the difference between windMPH and windSpeedMPH
-            wind_speed = obs_response.ob.windSpeedMPH
-            if wind_speed is None:
-                ignored_values += 1
-            elif wind <= WindSpeedEnum.GOOD:
-                score += 5
-            elif wind <= WindSpeedEnum.MODERATE:
-                score += 4
-            elif wind <= WindSpeedEnum.POOR:
-                score += 3
-            elif wind <= WindSpeedEnum.TERRIBLE:
-                score += 2
-            else:
-                score += 1
+        # Take the average, though some weighted score could be used.
+        if ignored_values == 3:
 
-            wind_gust = obs_response.ob.windGustMPH
-            if wind_gust is None or wind_gust <= 4:
-                score += 5
-            elif wind_gust <= WindSpeedEnum.GOOD:
-                score += 5
-            elif wind_gust <= WindSpeedEnum.MODERATE:
-                score += 4
-            elif wind_gust <= WindSpeedEnum.POOR:
-                score += 3
-            elif wind_gust <= WindSpeedEnum.TERRIBLE:
-                score += 2
-            else:
-                ignored_values += 1
+            avg = None
+        else:
+            # don't have values that were none count to the average
+            avg = round(score / (3 - ignored_values))
+        return avg
 
-            # Take the average, though some weighted score could be used.
-            if ignored_values == 3:
-
-                scores.append(None)
-            else:
-                # don't have values that were none count to the average
-                scores.append(round(score / (3 - ignored_values)))
-        return scores
-
-    def _check_temp_score(self, obs: list):
+    def _check_temp_score(self, obs: ObservationsData):
         """
-        Given a list of ObservationsData grab the wind data and compare those to some temperature scores
-        :param obs: list of ObservationsData holding data from a aerisweather.observations api endpoint
+        Given a list of ObservationsData grab the temperature data and compare those to some temperature scores
+        :param obs: ObservationsData holding data from a aerisweather.observations api endpoint
         :return: list of int scores for each observation passed.
         """
-        scores = list()
-        for obs_response in obs:
-            score = 0
-            heat_index = obs_response.ob.heatindexF
-            wind_chill = obs_response.ob.windchillF
-            feels_like = obs_response.ob.feelslikeF
-            for value in [heat_index, wind_chill, feels_like]:
-                if TemperatureEnum.GOOD_MIN <= value <= TemperatureEnum.GOOD_MAX:
-                    score += 5
-                elif TemperatureEnum.MODERATE_MIN <= value <= TemperatureEnum.MODERATE_MAX:
-                    score += 4
-                elif TemperatureEnum.POOR_MIN <= value <= TemperatureEnum.POOR_MAX:
-                    score += 3
-                elif TemperatureEnum.TERRIBLE_MIN <= value <= TemperatureEnum.TERRIBLE_MAX:
-                    score += 2
-                else:
-                    score += 1
-
-            scores.append(round(score / 3))
-
-        return scores
-
-    def _check_precipitation_score(self, obs: list):
-        """
-        Given a list of ObservationsData grab the wind data and compare those to some precipitation scores
-        :param obs: list of ObservationsData holding data from a aerisweather.observations api endpoint
-        :return: list of int scores for each observation passed.
-        """
-        scores = list()
-        for obs_response in obs:
-            precep_inches = obs_response.ob.precipIN
-            score = 0
-            # Not sure if these values are reasonable since where the rain is
-            # happening could determine how much if affects the conditions
-            if precep_inches is None or precep_inches <= 0.2:
-                score += 5
-            elif precep_inches <= .5:
-                score += 4
-            elif precep_inches <= .9:
-                score += 3
-            elif precep_inches <= 1.3:
-                score += 2
+        score = 0
+        temp_types = [obs.heatindexF, obs.windchillF, obs.feelslikeF]
+        for value in temp_types:
+            if TemperatureEnum.BEST_MIN <= value <= TemperatureEnum.BEST_MAX:
+                score += ScoreEnum.BEST
+            elif TemperatureEnum.MODERATE_MIN <= value <= TemperatureEnum.MODERATE_MAX:
+                score += ScoreEnum.MODERATE
+            elif TemperatureEnum.NEUTRAL_MIN <= value <= TemperatureEnum.NEUTRAL_MAX:
+                score += ScoreEnum.NEUTRAL
+            elif TemperatureEnum.POOR_MIN <= value <= TemperatureEnum.POOR_MAX:
+                score += ScoreEnum.POOR
+            elif TemperatureEnum.TERRIBLE_MIN <= value <= TemperatureEnum.TERRIBLE_MAX:
+                score += ScoreEnum.TERRIBLE
             else:
-                score += 1
+                score += ScoreEnum.TERRIBLE
 
-            scores.append(score)
-        return scores
+        avg = round(score / 3)
+
+        return avg
+
+    def _check_precipitation_score(self, obs: ObservationsData):
+        """
+        Given an ObservationsData grab the percipitation data and compare those to some precipitation scores
+        :param obs: ObservationsData holding data from a aerisweather.observations api endpoint
+        :return: int scores for how much downfall there is
+        """
+
+        precep_inches = obs.precipIN
+        score = 0
+        # Not sure if these values are reasonable since where the rain is
+        # happening could determine how much if affects the conditions
+        # TODO handle boundaries as floats
+        if precep_inches is None or precep_inches <= 0.2:
+            score += ScoreEnum.BEST
+        elif precep_inches <= .5:
+            score += ScoreEnum.MODERATE
+        elif precep_inches <= .9:
+            score += ScoreEnum.NEUTRAL
+        elif precep_inches <= 1.3:
+            score += ScoreEnum.POOR
+        else:
+            score += ScoreEnum.TERRIBLE
+
+        return score
 
 
     def _check_alerts_score(self, alerts):
         pass
 
-    def _check_forecasts_score(self, forecasts):
+    def _check_forecasts_score(self, forecast: ForecastPeriod):
+        """
+        From the forecast given, create an index score for all the weather types.
+        :param forecast: ForecastPeriod for a future time which the activity will still be happening
+        :return: int: score for that period of time
+        """
+        # TODO forecastPeriod and ObservationsData don't have the same keys, so we would need a generic method that takes
+        # arguments for which attribute and which enum
+        wind = self._check_wind_score(forecast)
+        temp = self._check_temp_score(forecast)
+        precipitation_score = self._check_precipitation_score(forecast)
 
-        for forecast in forecasts:
-            obs = ObservationsData(forecast.data)
-            res = ObservationsResponse(forecast.data)
-            wind_scores = self._check_wind_score(obs)
-            temp_scores = self._check_temp_score(forecast)
-            precip_scores = self._check_precipitation_score(forecast)
-
-            wat = 'wat'
 
     def _check_air_quality_score(self, air_quality):
         """
-        Given a list of ObservationsData grab the wind data and compare those to some air quality scores
+        Given an ObservationsData grab the air quality data and compare those to some air quality scores
         :param obs: list of ObservationsData holding data from a aerisweather.observations api endpoint
-        :return: list of int scores for each observation passed.
+        :return: int score
         """
         scores = list()
         for obs_response in air_quality:
@@ -226,17 +209,17 @@ class DiscGolfActivity(BaseActivity):
                 if aqi is None:
                     score = None
                 elif aqi > AirQualityMinEnum.HAZARDOUS:
-                    score += 0
+                    score += ScoreEnum.TERRIBLE
                 elif aqi > AirQualityMinEnum.VERY_UNHEALTHY:
-                    score += 1
+                    score += ScoreEnum.TERRIBLE
                 elif aqi > AirQualityMinEnum.UNHEALTHY:
-                    score += 2
+                    score += ScoreEnum.POOR
                 elif aqi > AirQualityMinEnum.USG:
-                    score += 3
+                    score += ScoreEnum.NEUTRAL
                 elif aqi > AirQualityMinEnum.MODERATE:
-                    score += 4
+                    score += ScoreEnum.MODERATE
                 else:
-                    score += 5
+                    score += ScoreEnum.BEST
                 scores.append(score)
 
         return scores
