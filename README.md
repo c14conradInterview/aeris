@@ -1,4 +1,4 @@
-#Aeris Disc Golf Index
+# Aeris Disc Golf Index
 
 ## Install
 Requires python3 and using the provided api aerisweather.\
