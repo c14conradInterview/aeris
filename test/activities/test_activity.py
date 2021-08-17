@@ -80,6 +80,7 @@ def test__check_wind_score(paramed_obs_data, answer, disc_actitivty):
     wind_score = disc_actitivty._check_wind_score(paramed_obs_data)
     assert wind_score == answer
 
+
 @pytest.mark.parametrize('paramed_obs_data,answer',
                          [({'heatindexF': 70,
                           'windchillF': 70,
@@ -98,6 +99,7 @@ def test__check_wind_score(paramed_obs_data, answer, disc_actitivty):
 def test__check_temp_score(paramed_obs_data, answer, disc_actitivty):
     score = disc_actitivty._check_temp_score(paramed_obs_data)
     assert score == answer
+
 
 @pytest.mark.parametrize('paramed_obs_data,answer',
                          [({'precipIN': 0}, 5),
