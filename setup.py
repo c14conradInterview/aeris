@@ -6,5 +6,5 @@ setup(name='aeris',
       description='Interview problem',
       author='Charles Conrad',
       packages=find_packages(),
-      install_requires=['aerisweather=<0.4.1'],
-     )
+      install_requires=['aerisweather>=0.4.1']
+      )
