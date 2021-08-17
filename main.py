@@ -12,7 +12,7 @@ def determine_activity_index(zipcode, golf=False):
     loc = RequestLocation(postal_code=zipcode)
     disc_activity = DiscGolfActivity(aeris_weather=aeris, location=loc)
     index = disc_activity.determine_activity_index()
-  
+
     print(f'The index for today is {index}. Go bang some chains!!!')
     if golf:
         EndpointType.custom = 'indices/golf'
